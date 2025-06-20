@@ -109,5 +109,3 @@ if __name__ == '__main__':
         if now.hour >= 9 and now.hour < 16:
             schedule.run_pending()
         time.sleep(30)
-    
-    app.run(debug=False, host='0.0.0.0', port=10000)
