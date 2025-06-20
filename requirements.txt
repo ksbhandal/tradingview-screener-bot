@@ -1,4 +1,6 @@
 flask
-selenium
 requests
+selenium
+beautifulsoup4
 pytz
+webdriver-manager
