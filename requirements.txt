@@ -1,5 +1,5 @@
-requests
 flask
+requests
 python-dotenv
-playwright
 pytz
+playwright
