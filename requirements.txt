@@ -1,7 +1,7 @@
-flask
+playwright
 requests
-selenium
+python-dotenv
+flask
 beautifulsoup4
 pytz
-webdriver-manager
 schedule
