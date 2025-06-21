@@ -34,9 +34,11 @@ def est_now():
 
 def login_and_scrape():
     options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+    options.binary_location = "/usr/bin/google-chrome"
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     try:
