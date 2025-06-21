@@ -1,7 +1,5 @@
-playwright
+flask
 requests
 python-dotenv
-flask
-beautifulsoup4
+playwright
 pytz
-schedule
