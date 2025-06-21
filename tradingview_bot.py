@@ -37,24 +37,29 @@ async def login_and_scrape():
             context = await browser.new_context()
             page = await context.new_page()
 
-            # Step 1: Go to homepage and login
-            try:
-                await page.goto("https://www.tradingview.com/#signin", timeout=70000, wait_until='networkidle')
-                await page.wait_for_selector('[data-name="header-user-menu-sign-in"]', timeout=20000)
-                await page.click('[data-name="header-user-menu-sign-in"]')
-            except PlaywrightTimeout:
-                raise Exception("Login page didn't load properly.")
+            # Step 1: Go to TradingView login page
+            await page.goto("https://www.tradingview.com/#signin", timeout=90000)
 
-            try:
-                await page.wait_for_selector("iframe[title='TradingView']", timeout=20000)
-                frame = page.frame_locator("iframe[title='TradingView']")
-                await frame.locator("input[name='username']").fill(TV_EMAIL)
-                await frame.locator("input[name='password']").fill(TV_PASSWORD)
-                await frame.locator("button[type='submit']").click()
-            except PlaywrightTimeout:
-                raise Exception("Login iframe or fields not available.")
+            # Wait for iframe to load, retry loop
+            for _ in range(10):
+                try:
+                    iframe = page.frame_locator("iframe[title='TradingView']")
+                    if await iframe.locator("input[name='username']").is_visible(timeout=5000):
+                        break
+                except:
+                    pass
+                await page.wait_for_timeout(2000)
+            else:
+                send_telegram_message("[ERROR] Scan failed: Login page didn't load properly.")
+                await browser.close()
+                return
 
-            await page.wait_for_timeout(10000)  # Let the session settle
+            # Fill credentials
+            await iframe.locator("input[name='username']").fill(TV_EMAIL)
+            await iframe.locator("input[name='password']").fill(TV_PASSWORD)
+            await iframe.locator("button[type='submit']").click()
+
+            await page.wait_for_timeout(8000)  # Let login settle
 
             # Step 2: Go to screener
             await page.goto(SCREENER_URL, timeout=30000)
