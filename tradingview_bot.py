@@ -2,10 +2,11 @@ import os
 import time
 import threading
 import requests
+import asyncio
 from flask import Flask
 from datetime import datetime
 from pytz import timezone
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
 # ENV Vars
 TV_EMAIL = os.environ.get("TRADINGVIEW_EMAIL")
@@ -27,40 +28,42 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-def login_and_scrape():
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+async def login_and_scrape():
+    try:
+        os.system("playwright install chromium")  # Ensures browser is installed at runtime
 
-        try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+
             # Login
-            page.goto("https://www.tradingview.com/#signin", timeout=60000)
-            page.wait_for_selector('[data-name="header-user-menu-sign-in"]', timeout=15000)
-            page.click('[data-name="header-user-menu-sign-in"]')
-            page.wait_for_selector("iframe[title='TradingView']", timeout=15000)
-            frame = page.frame_locator("iframe[title='TradingView']")
-            frame.locator("input[name='username']").fill(TV_EMAIL)
-            frame.locator("input[name='password']").fill(TV_PASSWORD)
-            frame.locator("button[type='submit']").click()
+            await page.goto("https://www.tradingview.com/#signin", timeout=60000)
+            await page.wait_for_selector('[data-name="header-user-menu-sign-in"]', timeout=15000)
+            await page.click('[data-name="header-user-menu-sign-in"]')
+            await page.wait_for_selector("iframe[title='TradingView']", timeout=15000)
 
-            # Wait for login & go to screener
-            page.wait_for_timeout(8000)
-            page.goto(SCREENER_URL)
-            page.wait_for_selector("table tr.tv-data-table__row", timeout=20000)
+            frame = page.frame_locator("iframe[title='TradingView']")
+            await frame.locator("input[name='username']").fill(TV_EMAIL)
+            await frame.locator("input[name='password']").fill(TV_PASSWORD)
+            await frame.locator("button[type='submit']").click()
+
+            await page.wait_for_timeout(8000)
+            await page.goto(SCREENER_URL)
+            await page.wait_for_selector("table tr.tv-data-table__row", timeout=20000)
 
             rows = page.locator("table tr.tv-data-table__row")
-            count = rows.count()
+            count = await rows.count()
             results = []
 
             for i in range(count):
                 row = rows.nth(i)
                 cols = row.locator("td")
-                symbol = cols.nth(0).inner_text().strip()
-                last = cols.nth(1).inner_text().strip()
-                change = cols.nth(2).inner_text().strip()
-                volume = cols.nth(4).inner_text().strip()
-                results.append(f"{symbol} | Price: {last} | Change: {change} | Vol: {volume}")
+                symbol = await cols.nth(0).inner_text()
+                last = await cols.nth(1).inner_text()
+                change = await cols.nth(2).inner_text()
+                volume = await cols.nth(4).inner_text()
+                results.append(f"{symbol.strip()} | Price: {last.strip()} | Change: {change.strip()} | Vol: {volume.strip()}")
 
             if results:
                 msg = f"\U0001F680 TradingView Screener Results @ {est_now().strftime('%I:%M %p')} EST\n\n"
@@ -68,11 +71,10 @@ def login_and_scrape():
                 send_telegram_message(msg)
             else:
                 send_telegram_message("No matching stocks found.")
+            await browser.close()
 
-        except Exception as e:
-            send_telegram_message(f"[ERROR] Scan failed: {str(e)}")
-        finally:
-            browser.close()
+    except Exception as e:
+        send_telegram_message(f"[ERROR] Scan failed: {str(e)}")
 
 @app.route("/")
 def home():
@@ -81,7 +83,7 @@ def home():
 @app.route("/scan")
 def scan():
     try:
-        login_and_scrape()
+        asyncio.run(login_and_scrape())
         return "Scan complete."
     except Exception as e:
         return f"Scan failed: {str(e)}"
