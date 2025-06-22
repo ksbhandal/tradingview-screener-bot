@@ -1,5 +1,12 @@
-flask
 requests
+pandas
+numpy
+streamlit
+plotly
+scikit-learn
+matplotlib
+
+flask
 python-dotenv
 pytz
 playwright
