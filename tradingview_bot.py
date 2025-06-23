@@ -49,7 +49,10 @@ async def login_and_scrape() -> None:
         await page.goto("https://www.tradingview.com/accounts/signin/", timeout=90000)
 
         try:
-            iframe = page.frame_locator("iframe")
+            # the login form is embedded in a third iframe on the page
+            # using nth() avoids Playwright strict mode errors when multiple
+            # iframes exist (e.g. Google login or captcha frames)
+            iframe = page.frame_locator("iframe").nth(2)
             await iframe.locator("input[type='text']").fill(TV_EMAIL)
             await iframe.locator("button[type='submit']").click()
             await iframe.locator("input[type='password']").wait_for(timeout=15000)
