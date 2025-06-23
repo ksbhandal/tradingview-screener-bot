@@ -49,25 +49,29 @@ async def login_and_scrape() -> None:
         await page.goto("https://www.tradingview.com/accounts/signin/", timeout=90000)
 
         try:
-            # locate the iframe containing the username field
+            # locate the iframe that hosts the TradingView login form
             await page.wait_for_selector("iframe", timeout=30000)
             login_frame = None
-            for frame in page.frames:
-                try:
-                    await frame.wait_for_selector("input[type='text']", timeout=3000)
-                    login_frame = frame
+            for _ in range(20):
+                for frame in page.frames:
+                    try:
+                        await frame.wait_for_selector("input[name='username']", timeout=1000)
+                        login_frame = frame
+                        break
+                    except PlaywrightTimeout:
+                        continue
+                if login_frame:
                     break
-                except PlaywrightTimeout:
-                    continue
+                await asyncio.sleep(1)
 
             if not login_frame:
                 raise PlaywrightTimeout("Login iframe not found")
 
-            await login_frame.locator("input[type='text']").fill(TV_EMAIL)
-            await login_frame.locator("button[type='submit']").click()
-            await login_frame.locator("input[type='password']").wait_for(timeout=15000)
-            await login_frame.locator("input[type='password']").fill(TV_PASSWORD)
-            await login_frame.locator("button[type='submit']").click()
+            await login_frame.fill("input[name='username']", TV_EMAIL)
+            await login_frame.click("button[type='submit']")
+            await login_frame.wait_for_selector("input[type='password']", timeout=15000)
+            await login_frame.fill("input[type='password']", TV_PASSWORD)
+            await login_frame.click("button[type='submit']")
             await page.wait_for_load_state("networkidle")
         except PlaywrightTimeout:
             send_telegram_message("[ERROR] Login form did not load correctly.")
