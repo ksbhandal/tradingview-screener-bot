@@ -49,15 +49,25 @@ async def login_and_scrape() -> None:
         await page.goto("https://www.tradingview.com/accounts/signin/", timeout=90000)
 
         try:
-            # the login form is embedded in a third iframe on the page
-            # using nth() avoids Playwright strict mode errors when multiple
-            # iframes exist (e.g. Google login or captcha frames)
-            iframe = page.frame_locator("iframe").nth(2)
-            await iframe.locator("input[type='text']").fill(TV_EMAIL)
-            await iframe.locator("button[type='submit']").click()
-            await iframe.locator("input[type='password']").wait_for(timeout=15000)
-            await iframe.locator("input[type='password']").fill(TV_PASSWORD)
-            await iframe.locator("button[type='submit']").click()
+            # locate the iframe containing the username field
+            await page.wait_for_selector("iframe", timeout=30000)
+            login_frame = None
+            for frame in page.frames:
+                try:
+                    await frame.wait_for_selector("input[type='text']", timeout=3000)
+                    login_frame = frame
+                    break
+                except PlaywrightTimeout:
+                    continue
+
+            if not login_frame:
+                raise PlaywrightTimeout("Login iframe not found")
+
+            await login_frame.locator("input[type='text']").fill(TV_EMAIL)
+            await login_frame.locator("button[type='submit']").click()
+            await login_frame.locator("input[type='password']").wait_for(timeout=15000)
+            await login_frame.locator("input[type='password']").fill(TV_PASSWORD)
+            await login_frame.locator("button[type='submit']").click()
             await page.wait_for_load_state("networkidle")
         except PlaywrightTimeout:
             send_telegram_message("[ERROR] Login form did not load correctly.")
