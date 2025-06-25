@@ -120,17 +120,5 @@ def scan():
         return f"Scan failed: {str(e)}"
 
 if __name__ == "__main__":
-    def ping_self():
-        while True:
-            now = est_now()
-            if 4 <= now.hour < 9 or (now.hour == 9 and now.minute <= 30):
-                try:
-                    print(f"[Self-Ping] Triggering scan at {now.strftime('%I:%M %p')} EST")
-                    requests.get(f"{SELF_URL}/scan")
-                except Exception as e:
-                    print(f"[Self-Ping Error] {e}")
-            time.sleep(900)  # every 15 minutes
-
-    threading.Thread(target=ping_self).start()
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
