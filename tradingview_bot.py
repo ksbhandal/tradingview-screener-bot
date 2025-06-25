@@ -12,10 +12,8 @@ CHAT_ID = os.environ.get("CHAT_ID")
 SELF_URL = os.environ.get("SELF_URL")
 app = Flask(__name__)
 
-
 def est_now():
     return datetime.now(timezone("US/Eastern"))
-
 
 def send_telegram_message(message):
     try:
@@ -23,7 +21,6 @@ def send_telegram_message(message):
         requests.post(url, data={"chat_id": CHAT_ID, "text": message})
     except Exception as e:
         print(f"Telegram error: {e}")
-
 
 def scrape_and_notify():
     try:
@@ -86,7 +83,6 @@ def scrape_and_notify():
             exchange = symbol.split(":")[0]
             price = float(last) if last else 0
 
-            # Apply filters to clean junk OTC and microcaps
             if (
                 change_pct >= 10
                 and volume >= 100000
@@ -95,12 +91,15 @@ def scrape_and_notify():
                 and exchange in ["NASDAQ", "NYSE"]
             ):
                 results.append(
-                    f"{symbol} | Price: {price:.4f} | Change: {change_pct:.2f}% | Vol: {int(volume)} | Market Cap: {int(market_cap)}"
+                    f"📈 {symbol}\n"
+                    f"💵 Price: ${price:.4f}   | 📊 Change: +{change_pct:.2f}%\n"
+                    f"📦 Volume: {int(volume):,}  | 🏦 MCap: ${int(market_cap):,}\n"
                 )
 
         if results:
-            msg = f"🚀 Pre-Market Gainers @ {est_now().strftime('%I:%M %p')} EST\n\n"
-            msg += "\n".join(results[:25])  # Limit to top 25
+            msg = f"🌅 Pre-Market Gainers @ {est_now().strftime('%I:%M %p')} EST\n"
+            msg += f"🧮 Total: {len(results)} stocks\n\n"
+            msg += "\n".join(results[:25])
             send_telegram_message(msg)
         else:
             send_telegram_message("⚠️ No clean gainers found above 10% with safe filters.")
@@ -108,11 +107,9 @@ def scrape_and_notify():
     except Exception as e:
         send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
 
-
 @app.route("/")
 def home():
     return "TradingView Screener Bot is live."
-
 
 @app.route("/scan")
 def scan():
@@ -121,7 +118,6 @@ def scan():
         return "Scan complete."
     except Exception as e:
         return f"Scan failed: {str(e)}"
-
 
 if __name__ == "__main__":
     def ping_self():
