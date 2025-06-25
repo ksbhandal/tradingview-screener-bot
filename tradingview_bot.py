@@ -1,20 +1,18 @@
-import os
-import time
-import threading
 import requests
-import asyncio
+from bs4 import BeautifulSoup
 from flask import Flask
+import threading
+import time
 from datetime import datetime
 from pytz import timezone
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
+import os
 
-TV_EMAIL = os.getenv("TRADINGVIEW_EMAIL")
-TV_PASSWORD = os.getenv("TRADINGVIEW_PASSWORD")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-SELF_URL = os.getenv("SELF_URL")
+# Load ENV Vars
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+SELF_URL = os.environ.get("SELF_URL")
 
-SCREENER_URL = "https://www.tradingview.com/screener/pctXhfio/"
+URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
 app = Flask(__name__)
 
 
@@ -22,114 +20,80 @@ def est_now():
     return datetime.now(timezone("US/Eastern"))
 
 
-def send_telegram_message(message: str) -> None:
-    """Send a Telegram message using the configured bot."""
-    if not BOT_TOKEN or not CHAT_ID:
-        print("Telegram credentials missing")
-        return
+def send_telegram_message(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": message})
-    except Exception as exc:
-        print(f"Telegram error: {exc}")
+    except Exception as e:
+        print(f"Telegram error: {e}")
 
 
-async def login_and_scrape() -> None:
-    """Login to TradingView and scrape the configured screener."""
-    if not TV_EMAIL or not TV_PASSWORD:
-        send_telegram_message("[ERROR] TradingView credentials are missing.")
-        return
+def scrape_and_notify():
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90.0"
+        }
+        res = requests.get(URL, headers=headers)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-    os.system("playwright install chromium")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
-        context = await browser.new_context()
-        page = await context.new_page()
-
-        await page.goto("https://www.tradingview.com/accounts/signin/", timeout=90000)
-
-        try:
-            # locate the iframe that hosts the TradingView login form
-            await page.wait_for_selector("iframe", timeout=30000)
-            login_frame = None
-            for _ in range(20):
-                for frame in page.frames:
-                    try:
-                        await frame.wait_for_selector("input[name='username']", timeout=1000)
-                        login_frame = frame
-                        break
-                    except PlaywrightTimeout:
-                        continue
-                if login_frame:
-                    break
-                await asyncio.sleep(1)
-
-            if not login_frame:
-                raise PlaywrightTimeout("Login iframe not found")
-
-            await login_frame.fill("input[name='username']", TV_EMAIL)
-            await login_frame.click("button[type='submit']")
-            await login_frame.wait_for_selector("input[type='password']", timeout=15000)
-            await login_frame.fill("input[type='password']", TV_PASSWORD)
-            await login_frame.click("button[type='submit']")
-            await page.wait_for_load_state("networkidle")
-        except PlaywrightTimeout:
-            send_telegram_message("[ERROR] Login form did not load correctly.")
-            await browser.close()
+        rows = soup.select("div.tv-screener__content-pane div.tv-screener__row")
+        if not rows:
+            send_telegram_message("[ERROR] Screener content not found.")
             return
 
-        await page.goto(SCREENER_URL, timeout=30000)
-        await page.wait_for_selector("table tr.tv-data-table__row", timeout=20000)
-
-        rows = page.locator("table tr.tv-data-table__row")
-        count = await rows.count()
         results = []
+        for row in rows[:25]:
+            cols = row.select("div.tv-screener__cell")
+            if len(cols) < 6:
+                continue
 
-        for i in range(count):
-            row = rows.nth(i)
-            cols = row.locator("td")
-            symbol = await cols.nth(0).inner_text()
-            last = await cols.nth(1).inner_text()
-            change = await cols.nth(2).inner_text()
-            volume = await cols.nth(4).inner_text()
-            results.append(f"{symbol.strip()} | Price: {last.strip()} | Change: {change.strip()} | Vol: {volume.strip()}")
+            symbol = cols[0].get_text(strip=True)
+            last = cols[1].get_text(strip=True)
+            change_pct = cols[3].get_text(strip=True).replace('%', '')
+            volume = cols[5].get_text(strip=True)
+
+            try:
+                if float(change_pct) >= 10:
+                    results.append(f"{symbol} | Price: {last} | Change: {change_pct}% | Vol: {volume}")
+            except:
+                continue
 
         if results:
-            msg = f"\U0001F680 TradingView Screener Results @ {est_now().strftime('%I:%M %p')} EST\n\n"
+            msg = f"🚀 Pre-Market Gainers @ {est_now().strftime('%I:%M %p')} EST\n\n"
             msg += "\n".join(results)
             send_telegram_message(msg)
         else:
-            send_telegram_message("No matching stocks found.")
+            send_telegram_message("No qualifying stocks found in pre-market gainers.")
 
-        await browser.close()
+    except Exception as e:
+        send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
 
 
 @app.route("/")
 def home():
-    return "TradingView Screener Bot running..."
+    return "TradingView Screener Bot is live."
 
 
 @app.route("/scan")
 def scan():
     try:
-        asyncio.run(login_and_scrape())
+        scrape_and_notify()
         return "Scan complete."
-    except Exception as exc:
-        return f"Scan failed: {exc}"
+    except Exception as e:
+        return f"Scan failed: {str(e)}"
 
 
 if __name__ == "__main__":
     def ping_self():
         while True:
             now = est_now()
-            if now.hour >= 9 and (now.hour < 16 or (now.hour == 16 and now.minute == 0)):
-                if now.hour > 9 or now.minute >= 30:
-                    try:
-                        print(f"Pinging self at {now.strftime('%I:%M %p')} EST")
-                        requests.get(f"{SELF_URL}/scan")
-                    except Exception as exc:
-                        print(f"Self-ping failed: {exc}")
-            time.sleep(600)
+            if 4 <= now.hour < 9 or (now.hour == 9 and now.minute <= 30):
+                try:
+                    print(f"[Self-Ping] Triggering scan at {now.strftime('%I:%M %p')} EST")
+                    requests.get(f"{SELF_URL}/scan")
+                except Exception as e:
+                    print(f"[Self-Ping Error] {e}")
+            time.sleep(900)  # every 15 min
 
     threading.Thread(target=ping_self).start()
     app.run(host="0.0.0.0", port=10000)
