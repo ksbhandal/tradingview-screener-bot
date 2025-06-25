@@ -10,8 +10,6 @@ import os
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 SELF_URL = os.environ.get("SELF_URL")
-
-URL = "https://scanner.tradingview.com/america/scan"
 app = Flask(__name__)
 
 
@@ -22,11 +20,8 @@ def est_now():
 def send_telegram_message(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        res = requests.post(
-            url, data={"chat_id": CHAT_ID, "text": message}, timeout=10
-        )
-        res.raise_for_status()
-    except requests.RequestException as e:
+        requests.post(url, data={"chat_id": CHAT_ID, "text": message})
+    except Exception as e:
         print(f"Telegram error: {e}")
 
 
@@ -52,56 +47,51 @@ def parse_number(text):
 
 def scrape_and_notify():
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90.0"
-        }
         payload = {
             "filter": [
-                {"left": "is_premarket", "operation": "equal", "right": True},
-                {"left": "change", "operation": "greater_or_equal", "right": 10},
-                {"left": "volume", "operation": "greater_or_equal", "right": 100000},
-                {
-                    "left": "market_cap_basic",
-                    "operation": "less_or_equal",
-                    "right": 500000000,
-                },
+                {"left": "type", "operation": "equal", "right": "stock"},
+                {"left": "change|1", "operation": "greater_or_equal", "right": 10},
+                {"left": "Volume", "operation": "greater_or_equal", "right": 100000},
+                {"left": "market_cap_basic", "operation": "less_or_equal", "right": 500000000},
             ],
-            "symbols": {"tickers": [], "query": {"types": []}},
-            "columns": [
-                "name",
-                "close",
-                "change",
-                "volume",
-                "market_cap_basic",
-            ],
+            "options": {"lang": "en"},
+            "symbols": {"query": {"types": []}},
+            "columns": ["name", "close", "change", "volume", "market_cap_basic"],
             "sort": {"sortBy": "change", "sortOrder": "desc"},
-            "range": [0, 25],
+            "range": [0, 50],
         }
 
-        try:
-            res = requests.post(URL, json=payload, headers=headers, timeout=10)
-            res.raise_for_status()
-        except requests.RequestException as e:
-            send_telegram_message(f"[ERROR] HTTP request failed: {e}")
+        headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+        res = requests.post("https://scanner.tradingview.com/america/scan", json=payload, headers=headers)
+        if res.status_code != 200:
+            send_telegram_message(f"[ERROR] Screener request failed: HTTP {res.status_code}")
             return
 
         data = res.json().get("data", [])
+        if not data:
+            send_telegram_message("No qualifying stocks found in pre-market gainers.")
+            return
 
         results = []
-        for item in data:
-            try:
-                symbol = item.get("s", "-")
-                name, last, change_pct, volume, market_cap = item.get("d", [None] * 5)
-                if (
-                    float(change_pct) >= 10
-                    and parse_number(str(volume)) >= 100_000
-                    and parse_number(str(market_cap)) <= 500_000_000
-                ):
-                    results.append(
-                        f"{symbol} | Price: {last} | Change: {change_pct}% | Vol: {volume} | Market Cap: {market_cap}"
-                    )
-            except Exception:
+        for row in data:
+            values = row.get("d", [])
+            if len(values) < 5:
                 continue
+
+            symbol = row.get("s", "")
+            last = values[1]
+            change_pct = values[2]
+            volume = values[3]
+            market_cap = values[4]
+
+            if (
+                change_pct >= 10
+                and volume >= 100000
+                and market_cap <= 500000000
+            ):
+                results.append(
+                    f"{symbol} | Price: {last} | Change: {change_pct:.2f}% | Vol: {int(volume)} | Market Cap: {int(market_cap)}"
+                )
 
         if results:
             msg = f"🚀 Pre-Market Gainers @ {est_now().strftime('%I:%M %p')} EST\n\n"
@@ -111,3 +101,35 @@ def scrape_and_notify():
             send_telegram_message("No qualifying stocks found in pre-market gainers.")
 
     except Exception as e:
+        send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
+
+
+@app.route("/")
+def home():
+    return "TradingView Screener Bot is live."
+
+
+@app.route("/scan")
+def scan():
+    try:
+        scrape_and_notify()
+        return "Scan complete."
+    except Exception as e:
+        return f"Scan failed: {str(e)}"
+
+
+if __name__ == "__main__":
+    def ping_self():
+        while True:
+            now = est_now()
+            if 4 <= now.hour < 9 or (now.hour == 9 and now.minute <= 30):
+                try:
+                    print(f"[Self-Ping] Triggering scan at {now.strftime('%I:%M %p')} EST")
+                    requests.get(f"{SELF_URL}/scan")
+                except Exception as e:
+                    print(f"[Self-Ping Error] {e}")
+            time.sleep(900)  # every 15 min
+
+    threading.Thread(target=ping_self).start()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
