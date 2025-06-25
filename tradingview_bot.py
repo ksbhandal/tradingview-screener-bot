@@ -22,8 +22,11 @@ def est_now():
 def send_telegram_message(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": message})
-    except Exception as e:
+        res = requests.post(
+            url, data={"chat_id": CHAT_ID, "text": message}, timeout=10
+        )
+        res.raise_for_status()
+    except requests.RequestException as e:
         print(f"Telegram error: {e}")
 
 
@@ -75,7 +78,13 @@ def scrape_and_notify():
             "range": [0, 25],
         }
 
-        res = requests.post(URL, json=payload, headers=headers)
+        try:
+            res = requests.post(URL, json=payload, headers=headers, timeout=10)
+            res.raise_for_status()
+        except requests.RequestException as e:
+            send_telegram_message(f"[ERROR] HTTP request failed: {e}")
+            return
+
         data = res.json().get("data", [])
 
         results = []
@@ -102,18 +111,3 @@ def scrape_and_notify():
             send_telegram_message("No qualifying stocks found in pre-market gainers.")
 
     except Exception as e:
-        send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
-
-
-@app.route("/")
-def home():
-    return "TradingView Screener Bot is live."
-
-
-@app.route("/scan")
-def scan():
-    try:
-        scrape_and_notify()
-        return "Scan complete."
-    except Exception as e:
-        return f"Scan failed: {str(e)}"
