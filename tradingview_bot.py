@@ -25,24 +25,6 @@ def send_telegram_message(message):
         print(f"Telegram error: {e}")
 
 
-def parse_number(text):
-    """Convert strings like '1.2K' or '3M' to a float."""
-    if text is None:
-        return 0
-    text = text.replace(',', '').strip()
-    if not text:
-        return 0
-    multipliers = {'K': 1_000, 'M': 1_000_000, 'B': 1_000_000_000, 'T': 1_000_000_000_000}
-    last = text[-1]
-    if last in multipliers:
-        try:
-            return float(text[:-1]) * multipliers[last]
-        except ValueError:
-            return 0
-    try:
-        return float(text)
-    except ValueError:
-        return 0
 
 
 def scrape_and_notify():
@@ -50,8 +32,8 @@ def scrape_and_notify():
         payload = {
             "filter": [
                 {"left": "type", "operation": "equal", "right": "stock"},
-                {"left": "change|1", "operation": "greater_or_equal", "right": 10},
-                {"left": "Volume", "operation": "greater_or_equal", "right": 100000},
+                {"left": "change", "operation": "greater_or_equal", "right": 10},
+                {"left": "volume", "operation": "greater_or_equal", "right": 100000},
                 {"left": "market_cap_basic", "operation": "less_or_equal", "right": 500000000},
             ],
             "options": {"lang": "en"},
@@ -61,13 +43,27 @@ def scrape_and_notify():
             "range": [0, 50],
         }
 
-        headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-        res = requests.post("https://scanner.tradingview.com/america/scan", json=payload, headers=headers)
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Content-Type": "application/json",
+        }
+        res = requests.post(
+            "https://scanner.tradingview.com/america/scan",
+            json=payload,
+            headers=headers,
+            timeout=10,
+        )
         if res.status_code != 200:
-            send_telegram_message(f"[ERROR] Screener request failed: HTTP {res.status_code}")
+            send_telegram_message(
+                f"[ERROR] Screener request failed: HTTP {res.status_code}"
+            )
             return
 
-        data = res.json().get("data", [])
+        try:
+            data = res.json().get("data", [])
+        except ValueError:
+            send_telegram_message("[ERROR] Invalid JSON received from screener")
+            return
         if not data:
             send_telegram_message("No qualifying stocks found in pre-market gainers.")
             return
