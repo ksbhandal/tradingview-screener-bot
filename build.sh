@@ -1,8 +1,3 @@
 #!/bin/bash
-set -e
-
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# install the Playwright browser binaries without requiring sudo
-python -m playwright install chromium
+apt-get update && apt-get install -y python3-pip
+pip3 install -r requirements.txt
