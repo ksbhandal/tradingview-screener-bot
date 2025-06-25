@@ -3,5 +3,5 @@ services:
     name: tradingview_bot
     env: python
     buildCommand: ./build.sh
-    startCommand: python tradingview_bot.py
+    startCommand: python3 tradingview_bot.py
     plan: free
