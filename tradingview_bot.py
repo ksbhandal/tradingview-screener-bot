@@ -1,11 +1,11 @@
-import requests␊
-from bs4 import BeautifulSoup␊
-from flask import Flask␊
-import threading␊
-import time␊
-from datetime import datetime␊
-from pytz import timezone␊
-import os␊
+import requests
+from bs4 import BeautifulSoup
+from flask import Flask
+import threading
+import time
+from datetime import datetime
+from pytz import timezone
+import os
 
 # Load ENV Vars
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -20,7 +20,7 @@ def est_now():
     return datetime.now(timezone("US/Eastern"))
 
 
-def send_telegram_message(message):␊
+def send_telegram_message(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": message})
@@ -108,3 +108,19 @@ def scan():
         return "Scan complete."
     except Exception as e:
         return f"Scan failed: {str(e)}"
+
+
+if __name__ == "__main__":
+    def ping_self():
+        while True:
+            now = est_now()
+            if 4 <= now.hour < 9 or (now.hour == 9 and now.minute <= 30):
+                try:
+                    print(f"[Self-Ping] Triggering scan at {now.strftime('%I:%M %p')} EST")
+                    requests.get(f"{SELF_URL}/scan")
+                except Exception as e:
+                    print(f"[Self-Ping Error] {e}")
+            time.sleep(900)  # every 15 min
+
+    threading.Thread(target=ping_self).start()
+    app.run(host="0.0.0.0", port=10000)
