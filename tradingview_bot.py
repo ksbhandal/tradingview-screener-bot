@@ -25,8 +25,6 @@ def send_telegram_message(message):
         print(f"Telegram error: {e}")
 
 
-
-
 def scrape_and_notify():
     try:
         payload = {
@@ -34,7 +32,7 @@ def scrape_and_notify():
                 {"left": "type", "operation": "equal", "right": "stock"},
                 {"left": "change", "operation": "greater", "right": 10},
                 {"left": "volume", "operation": "greater", "right": 100000},
-                {"left": "market_cap_basic", "operation": "less", "right": 500000000},
+                {"left": "market_cap_basic", "operation": "less", "right": 500000000}
             ],
             "options": {"lang": "en"},
             "symbols": {"query": {"types": []}, "tickers": []},
@@ -49,12 +47,14 @@ def scrape_and_notify():
             "Referer": "https://www.tradingview.com/",
             "Origin": "https://www.tradingview.com",
         }
+
         res = requests.post(
             "https://scanner.tradingview.com/america/scan",
             json=payload,
             headers=headers,
             timeout=10,
         )
+
         if res.status_code != 200:
             send_telegram_message(
                 f"[ERROR] Screener request failed: HTTP {res.status_code}"
@@ -66,6 +66,7 @@ def scrape_and_notify():
         except ValueError:
             send_telegram_message("[ERROR] Invalid JSON received from screener")
             return
+
         if not data:
             send_telegram_message("No qualifying stocks found in pre-market gainers.")
             return
@@ -82,21 +83,27 @@ def scrape_and_notify():
             volume = values[3]
             market_cap = values[4]
 
+            exchange = symbol.split(":")[0]
+            price = float(last) if last else 0
+
+            # Apply filters to clean junk OTC and microcaps
             if (
                 change_pct >= 10
                 and volume >= 100000
-                and market_cap <= 500000000
+                and market_cap is not None and market_cap >= 10_000_000
+                and price >= 0.5
+                and exchange in ["NASDAQ", "NYSE"]
             ):
                 results.append(
-                    f"{symbol} | Price: {last} | Change: {change_pct:.2f}% | Vol: {int(volume)} | Market Cap: {int(market_cap)}"
+                    f"{symbol} | Price: {price:.4f} | Change: {change_pct:.2f}% | Vol: {int(volume)} | Market Cap: {int(market_cap)}"
                 )
 
         if results:
             msg = f"🚀 Pre-Market Gainers @ {est_now().strftime('%I:%M %p')} EST\n\n"
-            msg += "\n".join(results)
+            msg += "\n".join(results[:25])  # Limit to top 25
             send_telegram_message(msg)
         else:
-            send_telegram_message("No qualifying stocks found in pre-market gainers.")
+            send_telegram_message("⚠️ No clean gainers found above 10% with safe filters.")
 
     except Exception as e:
         send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
@@ -126,7 +133,7 @@ if __name__ == "__main__":
                     requests.get(f"{SELF_URL}/scan")
                 except Exception as e:
                     print(f"[Self-Ping Error] {e}")
-            time.sleep(900)  # every 15 min
+            time.sleep(900)  # every 15 minutes
 
     threading.Thread(target=ping_self).start()
     port = int(os.environ.get("PORT", 10000))
