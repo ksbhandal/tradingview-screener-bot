@@ -50,7 +50,7 @@ def scrape_and_notify():
             "Origin": "https://www.tradingview.com",
         }
         res = requests.post(
-            "https://scanner.tradingview.com/america/scan",
+            "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/",
             json=payload,
             headers=headers,
             timeout=10,
