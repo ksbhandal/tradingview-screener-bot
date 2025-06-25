@@ -32,12 +32,12 @@ def scrape_and_notify():
         payload = {
             "filter": [
                 {"left": "type", "operation": "equal", "right": "stock"},
-                {"left": "change", "operation": "greater_or_equal", "right": 10},
-                {"left": "volume", "operation": "greater_or_equal", "right": 100000},
-                {"left": "market_cap_basic", "operation": "less_or_equal", "right": 500000000},
+                {"left": "change", "operation": "greater", "right": 10},
+                {"left": "volume", "operation": "greater", "right": 100000},
+                {"left": "market_cap_basic", "operation": "less", "right": 500000000},
             ],
             "options": {"lang": "en"},
-            "symbols": {"query": {"types": []}},
+            "symbols": {"query": {"types": []}, "tickers": []},
             "columns": ["name", "close", "change", "volume", "market_cap_basic"],
             "sort": {"sortBy": "change", "sortOrder": "desc"},
             "range": [0, 50],
@@ -46,6 +46,8 @@ def scrape_and_notify():
         headers = {
             "User-Agent": "Mozilla/5.0",
             "Content-Type": "application/json",
+            "Referer": "https://www.tradingview.com/",
+            "Origin": "https://www.tradingview.com",
         }
         res = requests.post(
             "https://scanner.tradingview.com/america/scan",
