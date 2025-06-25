@@ -1,95 +1,110 @@
-import os
-import time
-import threading
-import asyncio
-import requests
-from flask import Flask
-from datetime import datetime
-from pytz import timezone
-from playwright.async_api import async_playwright
+import requests␊
+from bs4 import BeautifulSoup␊
+from flask import Flask␊
+import threading␊
+import time␊
+from datetime import datetime␊
+from pytz import timezone␊
+import os␊
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-SELF_URL = os.getenv("SELF_URL")
+# Load ENV Vars
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+SELF_URL = os.environ.get("SELF_URL")
 
-TRADINGVIEW_URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
+URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
 app = Flask(__name__)
+
 
 def est_now():
     return datetime.now(timezone("US/Eastern"))
 
-def send_telegram_message(message):
+
+def send_telegram_message(message):␊
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": message})
     except Exception as e:
         print(f"Telegram error: {e}")
 
-async def scrape_tradingview():
+
+def parse_number(text):
+    """Convert strings like '1.2K' or '3M' to a float."""
+    if text is None:
+        return 0
+    text = text.replace(',', '').strip()
+    if not text:
+        return 0
+    multipliers = {'K': 1_000, 'M': 1_000_000, 'B': 1_000_000_000, 'T': 1_000_000_000_000}
+    last = text[-1]
+    if last in multipliers:
+        try:
+            return float(text[:-1]) * multipliers[last]
+        except ValueError:
+            return 0
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            page = await context.new_page()
+        return float(text)
+    except ValueError:
+        return 0
 
-            await page.goto(TRADINGVIEW_URL, timeout=60000)
-            await page.wait_for_selector("table tr", timeout=20000)
 
-            rows = await page.locator("table tr").all()
-            results = []
+def scrape_and_notify():
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90.0"
+        }
+        res = requests.get(URL, headers=headers)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-            for row in rows[1:26]:  # Skip header, take top 25
-                cols = await row.locator("td").all()
-                if len(cols) < 5:
-                    continue
-                symbol = await cols[0].inner_text()
-                name = await cols[1].inner_text()
-                price = await cols[2].inner_text()
-                change = await cols[3].inner_text()
-                volume = await cols[4].inner_text()
+        rows = soup.select("div.tv-screener__content-pane div.tv-screener__row")
+        if not rows:
+            send_telegram_message("[ERROR] Screener content not found.")
+            return
 
-                try:
-                    percent = float(change.strip('%+').replace(',', ''))
-                    if percent >= 10:
-                        results.append(f"{symbol.strip()} | {price.strip()} | {change.strip()} | Vol: {volume.strip()}")
-                except:
-                    continue
+        results = []
+        for row in rows[:25]:
+            cols = row.select("div.tv-screener__cell")
+            if len(cols) < 7:
+                continue
 
-            if results:
-                msg = f"\U0001F680 Premarket Gainers @ {est_now().strftime('%I:%M %p')} EST\n\n"
-                msg += "\n".join(results)
-                send_telegram_message(msg)
-            else:
-                send_telegram_message("No qualifying premarket stocks found.")
+            symbol = cols[0].get_text(strip=True)
+            last = cols[1].get_text(strip=True)
+            change_pct = cols[3].get_text(strip=True).replace('%', '')
+            volume = cols[5].get_text(strip=True)
+            market_cap = cols[6].get_text(strip=True)
 
-            await browser.close()
+            try:
+                if (
+                    float(change_pct) >= 10
+                    and parse_number(volume) >= 100_000
+                    and parse_number(market_cap) <= 500_000_000
+                ):
+                    results.append(
+                        f"{symbol} | Price: {last} | Change: {change_pct}% | Vol: {volume} | Market Cap: {market_cap}"
+                    )
+            except Exception:
+                continue
+
+        if results:
+            msg = f"🚀 Pre-Market Gainers @ {est_now().strftime('%I:%M %p')} EST\n\n"
+            msg += "\n".join(results)
+            send_telegram_message(msg)
+        else:
+            send_telegram_message("No qualifying stocks found in pre-market gainers.")
 
     except Exception as e:
-        send_telegram_message(f"[ERROR] Scrape failed: {str(e)}")
+        send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
+
 
 @app.route("/")
 def home():
-    return "TradingView PreMarket Bot is running..."
+    return "TradingView Screener Bot is live."
+
 
 @app.route("/scan")
 def scan():
     try:
-        asyncio.run(scrape_tradingview())
+        scrape_and_notify()
         return "Scan complete."
     except Exception as e:
         return f"Scan failed: {str(e)}"
-
-if __name__ == "__main__":
-    def ping_self():
-        while True:
-            now = est_now()
-            if 4 <= now.hour < 9 or (now.hour == 9 and now.minute <= 30):
-                try:
-                    print(f"Pinging self at {now.strftime('%I:%M %p')} EST")
-                    requests.get(f"{SELF_URL}/scan")
-                except Exception as e:
-                    print(f"Self-ping failed: {e}")
-            time.sleep(600)  # Every 10 mins
-
-    threading.Thread(target=ping_self).start()
-    app.run(host="0.0.0.0", port=10000)
