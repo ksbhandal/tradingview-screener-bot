@@ -1,5 +1,5 @@
-flask␊
-requests␊
-beautifulsoup4␊
-pytz␊
-schedule␊
+flask
+requests
+beautifulsoup4
+pytz
+schedule
