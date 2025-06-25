@@ -1,5 +1,4 @@
 import requests
-from bs4 import BeautifulSoup
 from flask import Flask
 import threading
 import time
@@ -12,7 +11,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 SELF_URL = os.environ.get("SELF_URL")
 
-URL = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
+URL = "https://scanner.tradingview.com/america/scan"
 app = Flask(__name__)
 
 
@@ -53,31 +52,41 @@ def scrape_and_notify():
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90.0"
         }
-        res = requests.get(URL, headers=headers)
-        soup = BeautifulSoup(res.text, "html.parser")
+        payload = {
+            "filter": [
+                {"left": "is_premarket", "operation": "equal", "right": True},
+                {"left": "change", "operation": "greater_or_equal", "right": 10},
+                {"left": "volume", "operation": "greater_or_equal", "right": 100000},
+                {
+                    "left": "market_cap_basic",
+                    "operation": "less_or_equal",
+                    "right": 500000000,
+                },
+            ],
+            "symbols": {"tickers": [], "query": {"types": []}},
+            "columns": [
+                "name",
+                "close",
+                "change",
+                "volume",
+                "market_cap_basic",
+            ],
+            "sort": {"sortBy": "change", "sortOrder": "desc"},
+            "range": [0, 25],
+        }
 
-        rows = soup.select("div.tv-screener__content-pane div.tv-screener__row")
-        if not rows:
-            send_telegram_message("[ERROR] Screener content not found.")
-            return
+        res = requests.post(URL, json=payload, headers=headers)
+        data = res.json().get("data", [])
 
         results = []
-        for row in rows[:25]:
-            cols = row.select("div.tv-screener__cell")
-            if len(cols) < 7:
-                continue
-
-            symbol = cols[0].get_text(strip=True)
-            last = cols[1].get_text(strip=True)
-            change_pct = cols[3].get_text(strip=True).replace('%', '')
-            volume = cols[5].get_text(strip=True)
-            market_cap = cols[6].get_text(strip=True)
-
+        for item in data:
             try:
+                symbol = item.get("s", "-")
+                name, last, change_pct, volume, market_cap = item.get("d", [None] * 5)
                 if (
                     float(change_pct) >= 10
-                    and parse_number(volume) >= 100_000
-                    and parse_number(market_cap) <= 500_000_000
+                    and parse_number(str(volume)) >= 100_000
+                    and parse_number(str(market_cap)) <= 500_000_000
                 ):
                     results.append(
                         f"{symbol} | Price: {last} | Change: {change_pct}% | Vol: {volume} | Market Cap: {market_cap}"
@@ -108,19 +117,3 @@ def scan():
         return "Scan complete."
     except Exception as e:
         return f"Scan failed: {str(e)}"
-
-
-if __name__ == "__main__":
-    def ping_self():
-        while True:
-            now = est_now()
-            if 4 <= now.hour < 9 or (now.hour == 9 and now.minute <= 30):
-                try:
-                    print(f"[Self-Ping] Triggering scan at {now.strftime('%I:%M %p')} EST")
-                    requests.get(f"{SELF_URL}/scan")
-                except Exception as e:
-                    print(f"[Self-Ping Error] {e}")
-            time.sleep(900)  # every 15 min
-
-    threading.Thread(target=ping_self).start()
-    app.run(host="0.0.0.0", port=10000)
