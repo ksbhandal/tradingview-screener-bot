@@ -18,9 +18,18 @@ def est_now():
 def send_telegram_message(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": message,
+            "parse_mode": "MarkdownV2"
+        })
     except Exception as e:
         print(f"Telegram error: {e}")
+
+# Helper to escape special MarkdownV2 characters
+def escape_md(text):
+    escape_chars = r"\_*[]()~`>#+-=|{}.!"
+    return ''.join(f'\\{c}' if c in escape_chars else c for c in str(text))
 
 def scrape_and_notify():
     try:
@@ -69,24 +78,24 @@ def scrape_and_notify():
             if len(values) < 5:
                 continue
 
-            symbol = row.get("s", "")
-            price = values[1]
-            change_pct = values[2]
-            volume = values[3]
-            market_cap = values[4]
+            symbol = escape_md(row.get("s", ""))
+            price = escape_md(f"{values[1]:.4f}")
+            change_pct = escape_md(f"{values[2]:.2f}")
+            volume = escape_md(f"{int(values[3]):,}")
+            market_cap = escape_md(f"{int(values[4]):,}")
 
-            exchange = symbol.split(":")[0]
+            exchange = symbol.split("\\:")[0]  # Escaped colon
             if exchange not in ["NASDAQ", "NYSE"]:
                 continue
 
             results.append(
                 f"📈 *{symbol}*\n"
-                f"💵 Price: ${price:.4f}   | 📊 Change: +{change_pct:.2f}%\n"
-                f"📦 Volume: {int(volume):,}  | 🏦 MCap: ${int(market_cap):,}\n"
+                f"💵 Price: ${price}   | 📊 Change: +{change_pct}%\n"
+                f"📦 Volume: {volume}  | 🏦 MCap: ${market_cap}\n"
             )
 
         if results:
-            msg = f"🌅 *Pre-Market Gainers* @ {est_now().strftime('%I:%M %p')} EST\n"
+            msg = f"🌅 *Pre\\-Market Gainers* @ {escape_md(est_now().strftime('%I:%M %p'))} EST\n"
             msg += f"🧮 Total: {len(results)} stocks\n\n"
             msg += "\n".join(results)
             send_telegram_message(msg)
@@ -94,7 +103,7 @@ def scrape_and_notify():
             send_telegram_message("📉 No qualifying pre-market gainers found.")
 
     except Exception as e:
-        send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {str(e)}")
+        send_telegram_message(f"[ERROR] Failed to fetch pre-market gainers: {escape_md(e)}")
 
 @app.route("/")
 def home():
