@@ -1,12 +1,5 @@
-requests
-pandas
-numpy
-streamlit
-plotly
-scikit-learn
-matplotlib
-
 flask
-python-dotenv
+requests
+beautifulsoup4
 pytz
-playwright
+schedule
